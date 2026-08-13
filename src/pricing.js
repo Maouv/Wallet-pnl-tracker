@@ -1,17 +1,17 @@
 const CG_BASE = 'https://api.coingecko.com/api/v3';
+const DS_BASE = 'https://api.dexscreener.com';
 
 async function safeFetchJson(url) {
   try {
     const res = await fetch(url);
     if (!res.ok) return null;
     return await res.json();
-  } catch (err) {
+  } catch {
     return null;
   }
 }
 
-/** Native ETH + SOL price in USD. Returns null for a coin if lookup fails
- *  (caller must treat as "unknown", never silently substitute 0). */
+/** Native ETH + SOL price in USD. */
 export async function getNativePrices() {
   const data = await safeFetchJson(
     `${CG_BASE}/simple/price?ids=ethereum,solana&vs_currencies=usd`
@@ -20,6 +20,17 @@ export async function getNativePrices() {
     ethereum: data?.ethereum?.usd ?? null,
     solana: data?.solana?.usd ?? null,
   };
+}
+
+/** DexScreener fallback: pick highest-liquidity pair's priceUsd. */
+async function getDexScreenerPrice(chainId, tokenAddress) {
+  const data = await safeFetchJson(`${DS_BASE}/latest/dex/tokens/${tokenAddress}`);
+  if (!data?.pairs?.length) return null;
+  const onChain = data.pairs.filter((p) => p.chainId === chainId);
+  const pool = (onChain.length ? onChain : data.pairs).sort(
+    (a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0)
+  )[0];
+  return Number(pool?.priceUsd) || null;
 }
 
 /** contractAddresses: string[] (lowercase). Returns { [address]: priceUsd | null } */
@@ -31,10 +42,21 @@ export async function getEthTokenPrices(contractAddresses) {
   const data = await safeFetchJson(
     `${CG_BASE}/simple/token_price/ethereum?contract_addresses=${contractAddresses.join(',')}&vs_currencies=usd`
   );
-  if (!data) return result;
+  const missing = [];
   for (const addr of contractAddresses) {
-    result[addr] = data[addr]?.usd ?? null;
+    const cgPrice = data?.[addr]?.usd ?? null;
+    if (cgPrice != null) {
+      result[addr] = cgPrice;
+    } else {
+      missing.push(addr);
+    }
   }
+
+  for (const addr of missing) {
+    const dsPrice = await getDexScreenerPrice('ethereum', addr);
+    if (dsPrice != null) result[addr] = dsPrice;
+  }
+
   return result;
 }
 
@@ -47,10 +69,21 @@ export async function getSolTokenPrices(mintAddresses) {
   const data = await safeFetchJson(
     `${CG_BASE}/simple/token_price/solana?contract_addresses=${mintAddresses.join(',')}&vs_currencies=usd`
   );
-  if (!data) return result;
+  const missing = [];
   for (const mint of mintAddresses) {
-    result[mint] = data[mint]?.usd ?? null;
+    const cgPrice = data?.[mint]?.usd ?? null;
+    if (cgPrice != null) {
+      result[mint] = cgPrice;
+    } else {
+      missing.push(mint);
+    }
   }
+
+  for (const mint of missing) {
+    const dsPrice = await getDexScreenerPrice('solana', mint);
+    if (dsPrice != null) result[mint] = dsPrice;
+  }
+
   return result;
 }
 

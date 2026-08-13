@@ -11,14 +11,15 @@ async function safeFetchJson(url) {
   }
 }
 
-/** Native ETH + SOL price in USD. */
+/** Native ETH + SOL price in USD + IDR rate. */
 export async function getNativePrices() {
   const data = await safeFetchJson(
-    `${CG_BASE}/simple/price?ids=ethereum,solana&vs_currencies=usd`
+    `${CG_BASE}/simple/price?ids=ethereum,solana,usd-coin&vs_currencies=usd,idr`
   );
   return {
     ethereum: data?.ethereum?.usd ?? null,
     solana: data?.solana?.usd ?? null,
+    idrRate: data?.['usd-coin']?.idr ?? null,
   };
 }
 

@@ -1,22 +1,8 @@
 import { getEthNativeBalance, getEthTokenBalances } from './chains/eth.js';
 import { getSolNativeBalance, getSolTokenBalances } from './chains/sol.js';
 import { getNativePrices, getEthTokenPrices, getSolTokenPrices } from './pricing.js';
+import { getManualEntries } from './storage.js';
 
-/**
- * Fetches live value for every configured wallet.
- * Returns:
- * {
- *   totalUsd: number,
- *   partial: boolean,          // true if ANY value below is incomplete/unknown
- *   chains: {
- *     eth: [{ label, address, usd, issues: string[] }],
- *     sol: [{ label, address, usd, issues: string[] }]
- *   }
- * }
- * `issues` holds human-readable reasons a wallet's number might be a floor,
- * not the true value (RPC error, unpriced token, etc) — per the "fail loud,
- * per-component" rule, never silently folded into a clean-looking total.
- */
 export async function fetchPortfolio(wallets) {
   const nativePrices = await getNativePrices();
   let partial = false;
@@ -45,11 +31,31 @@ export async function fetchPortfolio(wallets) {
     solResults.push(result);
   }
 
-  const totalUsd =
+  const lpTotalUsd =
     ethResults.reduce((s, w) => s + w.usd, 0) + solResults.reduce((s, w) => s + w.usd, 0);
+
+  const manualEntries = getManualEntries();
+  const idrRate = nativePrices.idrRate;
+  let manualTotalIdr = 0;
+  let manualTotalUsd = 0;
+  for (const e of manualEntries) {
+    manualTotalIdr += e.idr;
+    if (idrRate) manualTotalUsd += e.idr / idrRate;
+  }
+  if (manualEntries.length > 0 && idrRate == null) {
+    partial = true;
+    issuesGlobal.push('Rate IDR tidak ditemukan — manual entry tidak bisa dikonversi ke USD');
+  }
+
+  const totalUsd = lpTotalUsd + manualTotalUsd;
 
   return {
     totalUsd,
+    lpTotalUsd,
+    manualTotalIdr,
+    manualTotalUsd,
+    idrRate,
+    manualEntries,
     partial,
     issuesGlobal,
     chains: { eth: ethResults, sol: solResults },

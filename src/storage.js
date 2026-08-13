@@ -15,6 +15,30 @@ db.exec(`
   )
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS manual_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts INTEGER NOT NULL,
+    label TEXT NOT NULL DEFAULT 'Full Porto',
+    idr REAL NOT NULL
+  )
+`);
+
+export function saveManualEntry(idr, label = 'Full Porto') {
+  const stmt = db.prepare(
+    'INSERT INTO manual_entries (ts, label, idr) VALUES (?, ?, ?)'
+  );
+  return stmt.run(Date.now(), label, idr).lastInsertRowid;
+}
+
+export function getManualEntries() {
+  return db.prepare('SELECT * FROM manual_entries ORDER BY ts ASC').all();
+}
+
+export function deleteManualEntry(id) {
+  db.prepare('DELETE FROM manual_entries WHERE id = ?').run(id);
+}
+
 /**
  * Save a new baseline snapshot. `partial` = true if any position/token
  * could not be priced (see edge case rules) — surfaced later so PnL

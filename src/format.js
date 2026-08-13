@@ -2,6 +2,10 @@ function fmtUsd(n) {
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function fmtIdr(n) {
+  return `Rp${n.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
 function fmtDate(ts) {
   return new Date(ts).toLocaleString('id-ID', {
     day: '2-digit',
@@ -23,7 +27,8 @@ function fmtDate(ts) {
 export function formatPortfolio(portfolio) {
   const lines = [];
   const warn = portfolio.partial ? ' ⚠️' : '';
-  lines.push(`*Full Porto ${fmtUsd(portfolio.totalUsd)}*${warn}`);
+
+  lines.push(`*LP Total ${fmtUsd(portfolio.lpTotalUsd ?? portfolio.totalUsd)}*${warn}`);
 
   for (const [chainKey, chainLabel] of [['eth', 'Eth'], ['sol', 'Sol']]) {
     const walletsForChain = portfolio.chains[chainKey];
@@ -34,6 +39,16 @@ export function formatPortfolio(portfolio) {
       lines.push(`└ ${w.label} ${fmtUsd(w.usd)}${flag}`);
     }
   }
+
+  if (portfolio.manualEntries?.length) {
+    lines.push('Manual');
+    for (const e of portfolio.manualEntries) {
+      lines.push(`└ ${e.label} ${fmtIdr(e.idr)}`);
+    }
+  }
+
+  lines.push('');
+  lines.push(`*Grand Total ${fmtUsd(portfolio.totalUsd)}*${warn}`);
 
   const allIssues = [
     ...(portfolio.issuesGlobal || []),

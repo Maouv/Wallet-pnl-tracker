@@ -23,18 +23,16 @@ function fmt(n, mode, idrRate) {
 
 export function formatPortfolio(portfolio, displayMode = 'usd') {
   const lines = [];
-  const warn = portfolio.partial ? ' ⚠️' : '';
   const rate = portfolio.idrRate;
 
-  lines.push(`*LP Total ${fmt(portfolio.lpTotalUsd ?? portfolio.totalUsd, displayMode, rate)}*${warn}`);
+  lines.push(`*LP Total ${fmt(portfolio.lpTotalUsd ?? portfolio.totalUsd, displayMode, rate)}*`);
 
   for (const [chainKey, chainLabel] of [['eth', 'Eth'], ['sol', 'Sol']]) {
     const walletsForChain = portfolio.chains[chainKey];
     if (!walletsForChain || walletsForChain.length === 0) continue;
     lines.push(chainLabel);
     for (const w of walletsForChain) {
-      const flag = w.issues.length ? ' ⚠️' : '';
-      lines.push(`└ ${w.label} ${fmt(w.usd, displayMode, rate)}${flag}`);
+      lines.push(`└ ${w.label} ${fmt(w.usd, displayMode, rate)}`);
     }
   }
 
@@ -46,7 +44,21 @@ export function formatPortfolio(portfolio, displayMode = 'usd') {
   }
 
   lines.push('');
-  lines.push(`*Grand Total ${fmt(portfolio.totalUsd, displayMode, rate)}*${warn}`);
+  lines.push(`*Grand Total ${fmt(portfolio.totalUsd, displayMode, rate)}*`);
+
+  const allIssues = [
+    ...(portfolio.issuesGlobal || []),
+    ...portfolio.chains.eth.flatMap((w) => w.issues),
+    ...portfolio.chains.sol.flatMap((w) => w.issues),
+  ];
+  if (allIssues.length) {
+    lines.push('');
+    const shown = allIssues.slice(0, 3);
+    for (const issue of shown) lines.push(`  • ${issue}`);
+    if (allIssues.length > 3) {
+      lines.push(`+${allIssues.length - 3} more...`);
+    }
+  }
 
   return lines.join('\n');
 }

@@ -1,0 +1,8 @@
+{
+  "eth": [
+    { "label": "W1", "address": "0xYourEthAddressHere" }
+  ],
+  "sol": [
+    { "label": "W2", "address": "YourSolAddressHere" }
+  ]
+}

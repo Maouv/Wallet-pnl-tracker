@@ -13,17 +13,21 @@ bot.use((ctx, next) => {
   return next();
 });
 
-function keyboard() {
+const lastFetchByChat = new Map();
+const awaitingManualInput = new Set();
+const displayModeByChat = new Map();
+
+function keyboard(chatId) {
+  const mode = displayModeByChat.get(chatId) || 'usd';
+  const toggleLabel = mode === 'usd' ? 'IDR' : 'USD';
   return Markup.inlineKeyboard([
     [Markup.button.callback('Refresh', 'refresh'), Markup.button.callback('Save', 'save')],
     [Markup.button.callback('PnL', 'pnl'), Markup.button.callback('Full Porto', 'manual')],
+    [Markup.button.callback(toggleLabel, 'toggle_currency')],
   ]);
 }
 
-const lastFetchByChat = new Map();
-const awaitingManualInput = new Set();
-
-bot.start((ctx) => ctx.reply('Wallet PnL tracker siap. Tekan Refresh buat cek value sekarang.', keyboard()));
+bot.start((ctx) => ctx.reply('Wallet PnL tracker siap. Tekan Refresh buat cek value sekarang.', keyboard(ctx.chat.id)));
 
 bot.action('refresh', async (ctx) => {
   await ctx.answerCbQuery('Fetching...');
@@ -31,12 +35,13 @@ bot.action('refresh', async (ctx) => {
   try {
     const portfolio = await fetchPortfolio(config.wallets);
     lastFetchByChat.set(ctx.chat.id, portfolio);
+    const mode = displayModeByChat.get(ctx.chat.id) || 'usd';
     await ctx.telegram.editMessageText(
       ctx.chat.id,
       msg.message_id,
       undefined,
-      formatPortfolio(portfolio),
-      { parse_mode: 'Markdown', ...keyboard() }
+      formatPortfolio(portfolio, mode),
+      { parse_mode: 'Markdown', ...keyboard(ctx.chat.id) }
     );
   } catch (err) {
     await ctx.telegram.editMessageText(
@@ -48,6 +53,22 @@ bot.action('refresh', async (ctx) => {
   }
 });
 
+bot.action('toggle_currency', async (ctx) => {
+  const current = displayModeByChat.get(ctx.chat.id) || 'usd';
+  const next = current === 'usd' ? 'idr' : 'usd';
+  displayModeByChat.set(ctx.chat.id, next);
+  await ctx.answerCbQuery(`Mode: ${next.toUpperCase()}`);
+  const portfolio = lastFetchByChat.get(ctx.chat.id);
+  if (portfolio) {
+    await ctx.reply(formatPortfolio(portfolio, next), {
+      parse_mode: 'Markdown',
+      ...keyboard(ctx.chat.id),
+    });
+  } else {
+    await ctx.reply(`Mode tampilan: ${next.toUpperCase()}. Tekan Refresh.`, keyboard(ctx.chat.id));
+  }
+});
+
 bot.action('save', async (ctx) => {
   await ctx.answerCbQuery();
   const cached = lastFetchByChat.get(ctx.chat.id);
@@ -56,24 +77,25 @@ bot.action('save', async (ctx) => {
   }
   saveSnapshot(cached.totalUsd, cached.chains, cached.partial);
   await ctx.reply(
-    `💾 Tersimpan sebagai baseline baru: ${new Date().toLocaleString('id-ID')}\nTotal: $${cached.totalUsd.toFixed(2)}`,
-    keyboard()
+    `💾 Tersimpan: ${new Date().toLocaleString('id-ID')}\nTotal: $${cached.totalUsd.toFixed(2)}`,
+    keyboard(ctx.chat.id)
   );
 });
 
 bot.action('pnl', async (ctx) => {
   await ctx.answerCbQuery('Menghitung...');
   if (countSnapshots() === 0) {
-    return ctx.reply('Belum ada save sama sekali. Tekan Refresh lalu Save dulu.', keyboard());
+    return ctx.reply('Belum ada save sama sekali. Tekan Refresh lalu Save dulu.', keyboard(ctx.chat.id));
   }
   try {
     const current = lastFetchByChat.get(ctx.chat.id) || (await fetchPortfolio(config.wallets));
     lastFetchByChat.set(ctx.chat.id, current);
     const lastSnapshot = getLatestSnapshot();
     const firstSnapshot = getFirstSnapshot();
-    await ctx.reply(formatPnl({ current, lastSnapshot, firstSnapshot }), {
+    const mode = displayModeByChat.get(ctx.chat.id) || 'usd';
+    await ctx.reply(formatPnl({ current, lastSnapshot, firstSnapshot }, mode), {
       parse_mode: 'Markdown',
-      ...keyboard(),
+      ...keyboard(ctx.chat.id),
     });
   } catch (err) {
     await ctx.reply(`❌ Gagal hitung PnL: ${err.message}`);
@@ -83,13 +105,13 @@ bot.action('pnl', async (ctx) => {
 bot.action('manual', async (ctx) => {
   await ctx.answerCbQuery();
   const entries = getManualEntries();
-  let msg = '*Manual Full Porto*\nKirim angka IDR buat nambah entry.\nContoh: `5000000`\n\n';
+  let msg = '*Manual Full Porto*\nKirim angka USD buat nambah entry.\nContoh: `500`\n\n';
   if (entries.length) {
     msg += 'Entry sekarang:\n';
     for (const e of entries) {
-      msg += `  [${e.id}] ${e.label}: Rp${e.idr.toLocaleString('id-ID')}\n`;
+      msg += `  [${e.id}] ${e.label}: $${e.usd.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n`;
     }
-    msg += '\nKirim \`del <id>\` buat hapus.';
+    msg += '\nKirim `del <id>` buat hapus.';
   }
   awaitingManualInput.add(ctx.chat.id);
   await ctx.reply(msg, { parse_mode: 'Markdown' });
@@ -103,7 +125,7 @@ bot.on('text', async (ctx) => {
     const id = parseInt(text.slice(4));
     if (id) {
       deleteManualEntry(id);
-      await ctx.reply(`Entry ${id} dihapus.`, keyboard());
+      await ctx.reply(`Entry ${id} dihapus.`, keyboard(ctx.chat.id));
     } else {
       await ctx.reply('Format: `del <id>`', { parse_mode: 'Markdown' });
     }
@@ -111,15 +133,15 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  const num = parseFloat(text.replace(/[^\d]/g, ''));
+  const num = parseFloat(text.replace(/[^\d.]/g, ''));
   if (!num || num <= 0) {
-    await ctx.reply('Angka gak valid. Kirim angka IDR, contoh: `5000000`', { parse_mode: 'Markdown' });
+    await ctx.reply('Angka gak valid. Kirim angka USD, contoh: `500`', { parse_mode: 'Markdown' });
     return;
   }
 
   saveManualEntry(num);
   awaitingManualInput.delete(ctx.chat.id);
-  await ctx.reply(`✓ Tersimpan: Rp${num.toLocaleString('id-ID')}`, keyboard());
+  await ctx.reply(`✓ Tersimpan: $${num.toFixed(2)}`, keyboard(ctx.chat.id));
 });
 
 bot.launch();

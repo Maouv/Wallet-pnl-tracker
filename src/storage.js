@@ -20,15 +20,15 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts INTEGER NOT NULL,
     label TEXT NOT NULL DEFAULT 'Full Porto',
-    idr REAL NOT NULL
+    usd REAL NOT NULL
   )
 `);
 
-export function saveManualEntry(idr, label = 'Full Porto') {
+export function saveManualEntry(usd, label = 'Full Porto') {
   const stmt = db.prepare(
-    'INSERT INTO manual_entries (ts, label, idr) VALUES (?, ?, ?)'
+    'INSERT INTO manual_entries (ts, label, usd) VALUES (?, ?, ?)'
   );
-  return stmt.run(Date.now(), label, idr).lastInsertRowid;
+  return stmt.run(Date.now(), label, usd).lastInsertRowid;
 }
 
 export function getManualEntries() {

@@ -35,26 +35,14 @@ export async function fetchPortfolio(wallets) {
     ethResults.reduce((s, w) => s + w.usd, 0) + solResults.reduce((s, w) => s + w.usd, 0);
 
   const manualEntries = getManualEntries();
-  const idrRate = nativePrices.idrRate;
-  let manualTotalIdr = 0;
-  let manualTotalUsd = 0;
-  for (const e of manualEntries) {
-    manualTotalIdr += e.idr;
-    if (idrRate) manualTotalUsd += e.idr / idrRate;
-  }
-  if (manualEntries.length > 0 && idrRate == null) {
-    partial = true;
-    issuesGlobal.push('Rate IDR tidak ditemukan — manual entry tidak bisa dikonversi ke USD');
-  }
-
+  const manualTotalUsd = manualEntries.reduce((s, e) => s + e.usd, 0);
   const totalUsd = lpTotalUsd + manualTotalUsd;
 
   return {
     totalUsd,
     lpTotalUsd,
-    manualTotalIdr,
     manualTotalUsd,
-    idrRate,
+    idrRate: nativePrices.idrRate,
     manualEntries,
     partial,
     issuesGlobal,

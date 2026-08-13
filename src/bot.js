@@ -1,7 +1,7 @@
 import { Telegraf, Markup } from 'telegraf';
 import { config } from './config.js';
 import { fetchPortfolio } from './portfolio.js';
-import { saveSnapshot, getLatestSnapshot, getFirstSnapshot, countSnapshots, saveManualEntry, getManualEntries, deleteManualEntry } from './storage.js';
+import { saveSnapshot, getLatestSnapshot, getFirstSnapshot, countSnapshots, clearSnapshots, getAllSnapshots, deleteSnapshot, saveManualEntry, getManualEntries, deleteManualEntry } from './storage.js';
 import { formatPortfolio, formatPnl } from './format.js';
 
 const bot = new Telegraf(config.telegramBotToken);
@@ -15,6 +15,7 @@ bot.use((ctx, next) => {
 
 const lastFetchByChat = new Map();
 const awaitingManualInput = new Set();
+const awaitingDeleteSave = new Set();
 const displayModeByChat = new Map();
 
 function keyboard(chatId) {
@@ -23,7 +24,7 @@ function keyboard(chatId) {
   return Markup.inlineKeyboard([
     [Markup.button.callback('Refresh', 'refresh'), Markup.button.callback('Save', 'save')],
     [Markup.button.callback('PnL', 'pnl'), Markup.button.callback('Full Porto', 'manual')],
-    [Markup.button.callback(toggleLabel, 'toggle_currency')],
+    [Markup.button.callback(toggleLabel, 'toggle_currency'), Markup.button.callback('Reset', 'reset'), Markup.button.callback('Hapus Save', 'delsave')],
   ]);
 }
 
@@ -102,6 +103,35 @@ bot.action('pnl', async (ctx) => {
   }
 });
 
+bot.action('reset', async (ctx) => {
+  await ctx.answerCbQuery();
+  const cached = lastFetchByChat.get(ctx.chat.id);
+  if (!cached) {
+    return ctx.reply('Tekan Refresh dulu biar data terbaru tersimpan sebagai baseline 0%.', keyboard(ctx.chat.id));
+  }
+  clearSnapshots();
+  saveSnapshot(cached.totalUsd, cached.chains, cached.partial);
+  const mode = displayModeByChat.get(ctx.chat.id) || 'usd';
+  const rate = cached.idrRate;
+  const f = mode === 'idr' && rate ? `Rp${(cached.totalUsd * rate).toLocaleString('id-ID', { maximumFractionDigits: 0 })}` : `$${cached.totalUsd.toFixed(2)}`;
+  await ctx.reply(`✓ Reset. Semua save lama dihapus. Baseline baru: ${f}\nPnL mulai dari 0%.`, keyboard(ctx.chat.id));
+});
+
+bot.action('delsave', async (ctx) => {
+  await ctx.answerCbQuery();
+  const snaps = getAllSnapshots();
+  if (!snaps.length) {
+    return ctx.reply('Belum ada save. Tekan Save dulu.', keyboard(ctx.chat.id));
+  }
+  let msg = '*Hapus Save*\nKirim `del <id>` buat hapus.\n\n';
+  for (const s of snaps) {
+    const d = new Date(s.ts).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    msg += `  [${s.id}] ${d} — $${s.total_usd.toFixed(2)}\n`;
+  }
+  awaitingDeleteSave.add(ctx.chat.id);
+  await ctx.reply(msg, { parse_mode: 'Markdown' });
+});
+
 bot.action('manual', async (ctx) => {
   await ctx.answerCbQuery();
   const entries = getManualEntries();
@@ -118,8 +148,24 @@ bot.action('manual', async (ctx) => {
 });
 
 bot.on('text', async (ctx) => {
-  if (!awaitingManualInput.has(ctx.chat.id)) return;
   const text = ctx.message.text.trim();
+
+  if (awaitingDeleteSave.has(ctx.chat.id)) {
+    if (text.startsWith('del ')) {
+      const id = parseInt(text.slice(4));
+      if (id) {
+        deleteSnapshot(id);
+        await ctx.reply(`Save ${id} dihapus.`, keyboard(ctx.chat.id));
+      } else {
+        await ctx.reply('Format: `del <id>`', { parse_mode: 'Markdown' });
+      }
+      awaitingDeleteSave.delete(ctx.chat.id);
+      return;
+    }
+    awaitingDeleteSave.delete(ctx.chat.id);
+  }
+
+  if (!awaitingManualInput.has(ctx.chat.id)) return;
 
   if (text.startsWith('del ')) {
     const id = parseInt(text.slice(4));

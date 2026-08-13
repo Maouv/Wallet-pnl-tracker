@@ -65,3 +65,15 @@ export function getFirstSnapshot() {
 export function countSnapshots() {
   return db.prepare('SELECT COUNT(*) as c FROM snapshots').get().c;
 }
+
+export function clearSnapshots() {
+  db.prepare('DELETE FROM snapshots').run();
+}
+
+export function getAllSnapshots() {
+  return db.prepare('SELECT id, ts, total_usd FROM snapshots ORDER BY ts ASC').all();
+}
+
+export function deleteSnapshot(id) {
+  db.prepare('DELETE FROM snapshots WHERE id = ?').run(id);
+}

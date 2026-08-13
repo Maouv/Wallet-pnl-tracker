@@ -48,17 +48,6 @@ export function formatPortfolio(portfolio, displayMode = 'usd') {
   lines.push('');
   lines.push(`*Grand Total ${fmt(portfolio.totalUsd, displayMode, rate)}*${warn}`);
 
-  const allIssues = [
-    ...(portfolio.issuesGlobal || []),
-    ...portfolio.chains.eth.flatMap((w) => w.issues),
-    ...portfolio.chains.sol.flatMap((w) => w.issues),
-  ];
-  if (allIssues.length) {
-    lines.push('');
-    lines.push('⚠️ _Belum lengkap, total di atas adalah batas bawah:_');
-    for (const issue of allIssues) lines.push(`  • ${issue}`);
-  }
-
   return lines.join('\n');
 }
 
@@ -88,11 +77,6 @@ export function formatPnl({ current, lastSnapshot, firstSnapshot }, displayMode 
     lines.push(
       `${f(firstSnapshot.total_usd)} → ${f(current.totalUsd)}  (${sign2}${f(diffLifetime)}, ${sign2}${pctLifetime.toFixed(2)}%)`
     );
-  }
-
-  if (current.partial || lastSnapshot.partial) {
-    lines.push('');
-    lines.push('⚠️ _Salah satu titik data ini tidak lengkap (lihat detail di Refresh) — persentase di atas perkiraan._');
   }
 
   return lines.join('\n');
